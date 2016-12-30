@@ -1,0 +1,212 @@
+# -*- coding: utf-8 -*-
+#!/usr/bin/env python
+
+VERSION = '{{ cookiecutter.version }}'
+APPNAME = '{{ cookiecutter.project_name }}'
+
+top = '.'
+out = 'build'
+
+import os, re, sys, subprocess, csv
+
+projectloc = os.path.join('{{ cookiecutter.github_username }}', '{{ cookiecutter.project_slug }}')
+
+def setworkspace(path, user, defaultuser='{{ cookiecutter.github_username }}'):
+    if os.path.exists(os.path.join(path, user)):
+        return os.path.join(path, user)
+    elif os.path.exists(os.path.join(path, defaultuser)):
+        return os.path.join(path, defaultuser)
+    else:
+        raise OSError("Parameter 'workspace' is undefined: {} does not exist.".format(path))
+
+
+if re.match(r'^win\d{2,}', sys.platform):
+    user = os.getenv('USERNAME')
+    workspace = setworkspace(os.path.join('\\\\csosa.gov\\dfsroot$\\', 'ORE'), user)
+    workspaceLatex = workspace
+    multicore = 0
+    copycmd = 'copy'
+elif re.match(r'^linux\d*', sys.platform):
+    user = os.getenv('USER')
+    workspace = setworkspace(os.path.join(os.path.expanduser('~'), 'ORE'), user)
+    if os.uname()[1] == 'aspire':
+        multicore = 0
+    elif os.uname()[1] == 'DC0633UBU02':
+        multicore = 2
+    elif os.uname()[1] == 'lenny':
+        multicore = 4
+    else:
+        multicore = 0
+    copycmd = 'cp'
+if not workspace:
+    raise PlatformError("This platform is not supported.")
+workspaceLatex = workspace
+
+def options(ctx):
+    ctx.add_option('--destdir', action='store', default='products',
+                   help='installation root dir')
+    ctx.add_option('--user', action='store', default=user,
+                   help='username used to resolve root paths. Default value' + \
+                        ' is drawn from an appropriate OS environment variable')
+    ctx.add_option('--workspace', action='store',
+                   default=workspace,
+                   help='absolute path to root dir of workspace containing' + \
+                        ' the project')
+    ctx.add_option('--projectloc', action='store',
+                   default=projectloc,
+                   help='relative (to workspace) path to top-level folder' + \
+                        ' containing the project')
+    ctx.add_option('--workspaceLatex', action='store',
+                   default=workspaceLatex,
+                   help='absolute path to the root dir of the project' + \
+                        ' workspace expressed as a LaTeX-friendly string')
+    ctx.add_option('--multicore', action='store', default=multicore,
+                   help='integer equal to the number of processor cores the' + \
+                        ' job should use')
+    ctx.add_option('--copycmd', action='store', default=copycmd,
+                   help='OS-specific command for copying files')
+    ctx.add_option('-d', '--dsn', dest='dsn', default='smart_cjp3',
+                   type='string', action='store',
+                   help='ODBC data source name (DSN)')
+    ctx.add_option('-u', '--uid', dest='uid', default=user,
+                   type='string', action='store',
+                   help='ODBC user name to use when authenticating to DSN')
+    ctx.add_option('-p', '--passwd', dest='passwd', default=None,
+                   type='string', action='store',
+                   help='Password for use with uid')
+    ctx.add_option('--cstart', dest='cstart', default=None,
+                   type='string', action='store',
+                   help='Cohort begin date (YYYY-MM-DD)')
+    ctx.add_option('--cend', dest='cend', default=None,
+                   type='string', action='store',
+                   help='Cohort end date (YYYY-MM-DD)')
+    ctx.add_option('--inglob', dest='inglob', default=None,
+                   type='string', action='store',
+                   help='Glob string defining input file(s)')
+
+
+def preBuild(ctx):
+    pass
+
+def postBuild(ctx):
+    pass
+
+def secrets(ctx, dsn, filename):
+    '''Fetch the username, password, and options for a specified ODBC DSN.
+    The function returns a tuple where username is the first element,
+    password the second, and options third.
+    '''
+    with(open(filename, 'r')) as f:
+        vmetadict = csv.DictReader(f)
+        for row in vmetadict:
+            if row['dsn'] == dsn:
+                return (row['user'], row['pwd'], row['opts'])
+    raise ValueError('The DSN %s is not in %s' % (dsn, filename))
+
+def set_project_paths(ctx):
+    """Return a dictionary with project paths represented by Waf nodes.
+    Source: http://hmgaudecker.github.io/econ-project-templates/organisation.html#usage-of-the-project-paths-within-wscript-files
+    """
+    pp = {}
+    pp['PROJECT_ROOT'] = '.'
+    # Absolute path to a file containing db connection parameters.
+    pp['SECRETS'] = os.path.expanduser('~/.secrets.csv')
+    pp['IN_DATA'] = 'src/data'
+    pp['IN_CODE'] = 'src'
+    pp['OUT_DATA'] = '{}/out/data'.format(out)
+    pp['OUT_PRODUCTS'] = '{}/out/products'.format(out)
+    pp['OUT_FIG'] = '{}/out/fig'.format(out)
+    pp['OUT_TBL'] = '{}/out/tbl'.format(out)
+    pp['OUT_LOG'] = '{}/out/log'.format(out)
+    # Convert the directories into Waf nodes with paths relative to PROJECT_ROOT
+    for key, val in pp.items():
+        if key == 'SECRETS':    # Leave this entry unchanged
+            pass
+        else:
+            pp[key] = ctx.path.make_node(val)
+    return pp
+
+def path_to(ctx, pp_key, *args):
+    """Return the relative path to os.path.join(*args*) in the directory
+    PROJECT_PATHS[pp_key] as seen from ctx.path (i.e. the directory of the
+    current wscript).
+
+    Use this to get the relative path---as needed by Waf---to a file in one
+    of the directory trees defined in the PROJECT_PATHS dictionary above.
+
+    We always pretend everything is in the source directory tree, Waf takes
+    care of the correct placing of targets and sources.
+    """
+    # Implementation detail:
+    #   We find the path to the directory where the file lives, so that
+    #   we do not accidentally declare a node that does not exist.
+    dir_path_in_tree = os.path.join('.', *args[:-1])
+    # Find/declare the directory node. Use an alias to shorten the line.
+    pp_key_fod = ctx.env.PROJECT_PATHS[pp_key].find_or_declare
+    dir_node = pp_key_fod(dir_path_in_tree).get_src()
+    # Get the relative path to the directory.
+    path_to_dir = dir_node.path_from(ctx.path)
+    # Return the relative path to the file.
+    return os.path.join(path_to_dir, args[-1])
+
+def configure(ctx):
+    if re.match(r'^win\d{2,}', sys.platform): ctx.load('sas')
+    ctx.load('python')
+    ctx.check_python_version((3,3,0))
+    ctx.check_python_module('datetime')
+    ctx.check_python_module('pandas')
+    # try:
+    # 	ctx.load('compiler_c')
+    # except ctx.errors.ConfigurationError:
+    # 	print('No C compiler found (ignored)')
+    # try:
+    #     ctx.check_python_headers()
+    # except ctx.errors.ConfigurationError:
+    # 	print('No python headers found (ignored)')
+
+def build(ctx):
+    # Func to execute before the build
+    ctx.add_pre_fun(preBuild)
+    ctx.env.USER = ctx.options.user
+    ctx.env.WORKSPACE = ctx.options.workspace
+    ctx.env.PROJECTLOC = ctx.options.projectloc
+    ctx.env.WORKSPACELATEX = ctx.options.workspaceLatex
+    ctx.env.MULTICORE = ctx.options.multicore
+    ctx.env.COPYCMD = ctx.options.copycmd
+    ctx.env.ODBC = {'dsn': ctx.options.dsn, 'uid': ctx.options.uid,
+                    'passwd': ctx.options.passwd}
+    ctx.env.CSTART = ctx.options.cstart
+    ctx.env.CEND = ctx.options.cend
+    ctx.env.INGLOB = ctx.options.inglob
+
+    # Bind the project paths to the build context object
+    ctx.env.PROJECT_PATHS = set_project_paths(ctx)
+    ctx.path_to = path_to
+    ctx.secrets = secrets
+
+    start_dir = ctx.path.find_dir(out)
+    ctx.install_files(
+        os.path.join('${DESTDIR}')
+#        , start_dir.ant_glob('**/*.pdf')
+        ,[
+           os.path.join('productsrc', 'prodname', 'filename.pdf')
+           # , os.path.join('productsrc', 'prodname', 'filename.pdf')
+        ]
+        , cwd=start_dir
+        , relative_trick=True
+        )
+
+    sasscrtch = ctx(
+        name = 'sasscratch'
+        , rule = 'sas -sysin ${SRC[0].abspath()} -log ${SRC[0].change_ext(".log").abspath()} -print ${SRC[0].change_ext(".lst").abspath()}'
+        , source = ['scratch.sas']
+        , always = False
+        , shell = False
+        , on_results = False
+        )
+
+    ctx.recurse(os.path.join('mastering'))
+
+def dist(ctx):
+	ctx.algo = 'zip'
+	ctx.excl = ' **/waf-* **/.waf-* **/*~ **/*.orig **/*.pyc **/*.pyo **/*.bak **/.lock-w* **/*.log **/*.lot **/*.lof **/*.lst **/*.aux **/*.bbl **/*.blg **/*.out **/*.toc **/*.Rout'
