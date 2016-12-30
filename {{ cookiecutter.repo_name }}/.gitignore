@@ -1,6 +1,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
 
 # C extensions
 *.so
@@ -42,6 +43,7 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *,cover
+.hypothesis/
 
 # Translations
 *.mo
@@ -56,6 +58,9 @@ docs/_build/
 # PyBuilder
 target/
 
+# pyenv python configuration file
+.python-version
+
 # DotEnv configuration
 .env
 
@@ -67,7 +72,14 @@ target/
 .idea
 
 # Jupyter NB Checkpoints
-.ipynb_checkpoints/
+src/notebooks/.ipynb_checkpoints/
+
+# Waf files, directories
+.cache/
+.lock-waf*
+__pycache__/
+.waf*/
+build/
 
 # exclude data from source control by default
-/data/
+data/
