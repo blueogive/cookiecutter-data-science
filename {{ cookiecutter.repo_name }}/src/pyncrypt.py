@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# coding=utf-8
+# -*- coding: utf-8 -*-
 
 """Module for fetching/storing encrypted credentials from/to a local file."""
 
@@ -68,7 +68,11 @@ class KeyStore(object):
         # Pad and encrypt
         mplyr = self.block_size - (len(plaintext) % self.block_size)
         cipher = AES.new(key, AES.MODE_CFB, iv)
-        safesecret = cipher.encrypt(plaintext + (b' ' * mplyr))
+        try:
+            plaintext = plaintext.decode()
+        except AttributeError:
+            pass
+        safesecret = cipher.encrypt(plaintext + (' ' * mplyr))
         return iv + safesecret
 
     def _decrypt(self, ciphertext, salt):
@@ -82,7 +86,12 @@ class KeyStore(object):
         # Reconstruct cipher (IV need not be identical to encrypt version)
         iv = Random.new().read(self.iv_size)
         cipher = AES.new(key, AES.MODE_CFB, iv)
-        return cipher.decrypt(ciphertext)[len(iv):].rstrip(b' ')
+        cleartext = cipher.decrypt(ciphertext)[len(iv):]
+        try:
+            cleartext = cleartext.decode()
+        except AttributeError:
+            pass
+        return cleartext.rstrip(' ')
 
     def _getphrase(self):
         """Getter for passphrase."""
