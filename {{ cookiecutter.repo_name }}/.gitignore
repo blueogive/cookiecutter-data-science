@@ -64,6 +64,9 @@ target/
 # DotEnv configuration
 .env
 
+# Encrypted key-value stores created/maintained using pyncrypt module.
+.secrets*
+
 # Database
 *.db
 *.rdb
