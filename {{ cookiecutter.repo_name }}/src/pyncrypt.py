@@ -21,7 +21,7 @@ class KeyStore(object):
     def __init__(self, salt_seed, **kwargs):
         """Instantiate the class, define all required attributes."""
         if (not salt_seed or len(salt_seed) == 0 or
-            isinstance(salt_seed, str) is False):
+            isinstance(salt_seed, bytes) is False):
             self.salt_seed = self._urand2str(8)
         else:
             self.salt_seed = salt_seed
@@ -41,8 +41,8 @@ class KeyStore(object):
         return base64.b64encode(bstring).decode(encoding)
 
     def _urand2str(self, nbytes, encoding='utf-8'):
-        """Return a random string from OS entropy pool."""
-        phrase = os.urandom(nbytes)  # Random bytes
+        """Return random bytes from cyptographically random pool."""
+        phrase = Random.new().read(nbytes)  # Random bytes
         while len(phrase) % 3 != 0:
             phrase += b"="
         return self._dcode(phrase, encoding)
