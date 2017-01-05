@@ -18,10 +18,17 @@ except ImportError:
 class KeyStore(object):
     """Securely store/retrieve encrypted key-value pairs to/from files."""
 
-    def __init__(self, salt_seed, **kwargs):
-        """Instantiate the class, define all required attributes."""
+    def __init__(self, salt_seed=None, **kwargs):
+        """Instantiate the class, define all required attributes.
+
+        NB: If no value of salt_seed is passed at instantiation, a random
+        value will be used and it will not be possible to recover the values
+        from the secretsdb_file without it. Instantiating the klass with a
+        NULL salt_seed is useful, therefore, if you want to create a KeyStore
+        that is only useful for the duration of the current Python process
+        (i.e., a one-time-use vault)."""
         if (not salt_seed or len(salt_seed) == 0 or
-            isinstance(salt_seed, bytes) is False):
+            isinstance(salt_seed, str) is False):
             self.salt_seed = self._urand2str(8)
         else:
             self.salt_seed = salt_seed
@@ -85,7 +92,14 @@ class KeyStore(object):
         iv = Random.new().read(self.iv_size)
         cipher = AES.new(key, AES.MODE_CFB, iv)
         cleartext = cipher.decrypt(ciphertext)[len(iv):]
-        return cleartext.decode().rstrip(r' ')
+        try:
+            retval = cleartext.decode().rstrip(r' ')
+        except UnicodeDecodeError:
+            raise ValueError('Value cannot be decoded. The passphrase' + \
+            ' used to initiate the KeyStore has likely changed. Correct the' + \
+            ' passphrase to its original value or delete the KeyStore and' + \
+            ' store new values within it.')
+        return retval
 
     def _getphrase(self):
         """Getter for passphrase."""
@@ -178,21 +192,23 @@ class KeyStore(object):
 def main():
     """Exercise the KeyStore klass."""
     myks = KeyStore('oompa-loompa')
+    # myks = KeyStore()  # Instantiate with NULL salt for one-time-use vault.
     sasore = r'xyz890def234#!'
     mike = 'abc123'
     myks.store('sasore', sasore)
     myks.store('mike', mike)
+    x = myks.require('sasore')
     test_sasore = myks.require('sasore') == sasore
     test_mike = myks.require('mike') == mike
     print('mike: {pwd}'.format(pwd=myks.require('mike')))
     print('mike succeeded?: {test}'.format(test=test_mike))
     print('sasore: {pwd}'.format(pwd=myks.require('sasore')))
     print('sasore succeeded?: {test}'.format(test=test_sasore))
-    myks.remove('mike')
-    myks.require('mike')  # Should force a prompt to enter a value
-    myks.remove('mike')
+    # myks.remove('mike')
+    # myks.require('mike')  # Should force a prompt to enter a value
+    # myks.remove('mike')
     # myks.store('mike', b'some bytes')  # Should raise TypeError
-    myks.clear()
+    # myks.clear()
 
 
 if __name__ == '__main__':
