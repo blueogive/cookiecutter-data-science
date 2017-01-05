@@ -60,6 +60,8 @@ class KeyStore(object):
 
         NB: Strips trailing whitespace frome plaintext!
         """
+        if hasattr(plaintext, 'decode'):
+            raise TypeError('Please pass a string value, not bytes.')
         # Initialize cipher randomly
         iv = Random.new().read(self.iv_size)
         passphrase = self._getsetphrase()
@@ -68,11 +70,7 @@ class KeyStore(object):
         # Pad and encrypt
         mplyr = self.block_size - (len(plaintext) % self.block_size)
         cipher = AES.new(key, AES.MODE_CFB, iv)
-        try:
-            plaintext = plaintext.decode()
-        except AttributeError:
-            pass
-        safesecret = cipher.encrypt(plaintext + (' ' * mplyr))
+        safesecret = cipher.encrypt(plaintext + (r' ' * mplyr))
         return iv + safesecret
 
     def _decrypt(self, ciphertext, salt):
@@ -87,11 +85,7 @@ class KeyStore(object):
         iv = Random.new().read(self.iv_size)
         cipher = AES.new(key, AES.MODE_CFB, iv)
         cleartext = cipher.decrypt(ciphertext)[len(iv):]
-        try:
-            cleartext = cleartext.decode()
-        except AttributeError:
-            pass
-        return cleartext.rstrip(' ')
+        return cleartext.decode().rstrip(r' ')
 
     def _getphrase(self):
         """Getter for passphrase."""
@@ -127,18 +121,21 @@ class KeyStore(object):
             with open(self.secretsdb_file, 'rb') as fle:
                 dbs = pickle.load(fle)
         except (IOError, EOFError, TypeError):
-            with open(self.secretsdb_file, 'wb') as fle:
-                dbs = {}
-                pickle.dump(dbs, fle)
+            dbs = {}
+            self._pickledb(dbs)
         return dbs
+
+    def _pickledb(self, thedict):
+        with open(self.secretsdb_file, 'wb') as fle:
+            os.chmod(self.secretsdb_file, self.file_perm)
+            pickle.dump(thedict, fle)
+        return None
 
     def store(self, key, value):
         """Store key-value pair safely and save to disk."""
         dbs = self._getsetdb()
         dbs[key] = self._encrypt(value, self._getsalt4key(key))
-        with open(self.secretsdb_file, 'wb') as fle:
-            os.chmod(self.secretsdb_file, self.file_perm)
-            pickle.dump(dbs, fle)
+        self._pickledb(dbs)
         return None
 
     def retrieve(self, key):
@@ -156,12 +153,33 @@ class KeyStore(object):
             self.store(key, getpass('Enter a value for "%s":' % key))
         return self.retrieve(key)
 
+    def remove(self, key):
+        """Remove a specific key from the store.
+
+        If the key does not exist, catch the error silently.
+        """
+        dbs = self._getsetdb()
+        try:
+            val = dbs.pop(key)
+            del val
+        except KeyError:
+            pass
+        self._pickledb(dbs)
+        return None
+
+    def clear(self):
+        """Remove ALL key-value pairs from the store."""
+        dbs = self._getsetdb()
+        dbs.clear()
+        self._pickledb(dbs)
+        return None
+
 
 def main():
     """Exercise the KeyStore klass."""
     myks = KeyStore('oompa-loompa')
-    sasore = b'xyz890def234#!'
-    mike = b'abc123'
+    sasore = r'xyz890def234#!'
+    mike = 'abc123'
     myks.store('sasore', sasore)
     myks.store('mike', mike)
     test_sasore = myks.require('sasore') == sasore
@@ -170,6 +188,11 @@ def main():
     print('mike succeeded?: {test}'.format(test=test_mike))
     print('sasore: {pwd}'.format(pwd=myks.require('sasore')))
     print('sasore succeeded?: {test}'.format(test=test_sasore))
+    myks.remove('mike')
+    myks.require('mike')  # Should force a prompt to enter a value
+    myks.remove('mike')
+    # myks.store('mike', b'some bytes')  # Should raise TypeError
+    myks.clear()
 
 
 if __name__ == '__main__':
