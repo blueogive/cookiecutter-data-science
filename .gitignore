@@ -2,3 +2,9 @@ docs/site/
 
 # OSX Junk
 .DS_Store
+
+# VSCode
+.vscode/
+
+# Cache directory
+.cache/
