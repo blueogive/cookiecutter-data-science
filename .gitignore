@@ -3,8 +3,10 @@ docs/site/
 # OSX Junk
 .DS_Store
 
+<<<<<<< HEAD
 # VSCode
 .vscode/
 
 # Cache directory
-.cache/
+.cache
+tests/__pycache__/*
