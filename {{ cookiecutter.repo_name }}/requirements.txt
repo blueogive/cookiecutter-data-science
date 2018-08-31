@@ -5,11 +5,38 @@
 click
 Sphinx
 coverage
+{% if cookiecutter.cloud_service == 'AWS' %}
 awscli
+{% endif %}
 flake8
+pytest
+pylint
+pep8
+pydocstyle
 python-dotenv>=0.5.1
+
+# credential management
+pbkdf2
+pycrypto
+git+https://github.com/blueogive/pyncrypt.git
+
 {% if cookiecutter.python_interpreter != 'python3' %}
 
 # backwards compatibility
 pathlib2
 {% endif %}
+
+# scientific Python stack
+numpy
+cython
+scipy
+scikit-learn
+statsmodels
+jupyter
+pandas
+psycopg2
+pyproj
+matplotlib
+seaborn
+jupyter_contrib_nbextensions
+sqlalchemy
